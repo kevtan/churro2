@@ -26,13 +26,19 @@ Metro status_led_timer = Metro(STATUS_LED_TIME_INTERVAL_MS);
 #define IR_SENSOR_CC 16 // Center Center
 #define IR_SENSOR_CR 14 // Center Right
 
+// Global Variables
+bool on_line = false;
+
 // Function Prototypes
 void initialize_motor_pins();
 void motor_r_forward();
 void motor_l_forward();
+void motor_r_stop();
+void motor_l_stop();
 bool test_status_led_timer_expired();
 void resp_status_led_timer_expired();
 bool test_on_line();
+bool test_off_line();
 void resp_on_line();
 void resp_off_line();
 
@@ -48,9 +54,8 @@ void loop()
     resp_status_led_timer_expired();
   if (test_on_line())
     resp_on_line();
-  else
+  if (test_off_line())
     resp_off_line();
-  delay(500);
 }
 
 void initialize_motor_pins()
@@ -65,16 +70,24 @@ void initialize_motor_pins()
 
 void motor_r_forward()
 {
-  digitalWrite(MOTOR_R_ENABLE, HIGH);
+  analogWrite(MOTOR_R_ENABLE, 150);
   digitalWrite(MOTOR_R_DIR_1, LOW);
   digitalWrite(MOTOR_R_DIR_2, HIGH);
 }
 
 void motor_l_forward()
 {
-  digitalWrite(MOTOR_L_ENABLE, HIGH);
+  analogWrite(MOTOR_L_ENABLE, 150);
   digitalWrite(MOTOR_L_DIR_1, LOW);
   digitalWrite(MOTOR_L_DIR_2, HIGH);
+}
+
+void motor_r_stop() {
+  analogWrite(MOTOR_R_ENABLE, 0);
+}
+
+void motor_l_stop() {
+  analogWrite(MOTOR_L_ENABLE, 0);
 }
 
 bool test_status_led_timer_expired()
@@ -91,15 +104,32 @@ void resp_status_led_timer_expired()
 
 bool test_on_line()
 {
-  return analogRead(IR_SENSOR_CC) < LINE_THRESHOLD_CC;
+  if (not on_line and analogRead(IR_SENSOR_CC) < LINE_THRESHOLD_CC) {
+    on_line = true;
+    return true;
+  }
+  return false;
+}
+
+bool test_off_line()
+{
+  if (on_line and analogRead(IR_SENSOR_CC) >= LINE_THRESHOLD_CC) {
+    on_line = false;
+    return true;
+  }
+  return false;
 }
 
 void resp_on_line()
 {
-  Serial.println("On");
+  Serial.println("Off -> On");
+  motor_l_stop();
+  motor_r_stop();
 }
 
 void resp_off_line()
 {
-  Serial.println("Off");
+  Serial.println("On -> Off");
+  motor_l_forward();
+  motor_r_forward();
 }
