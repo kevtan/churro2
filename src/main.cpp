@@ -12,28 +12,30 @@
  * -- working intake + outtake mechanism  
  * 
  * TO DOs
- * 0. [INTAKE/HOPPER] TODO:#00 ADD THE HOPPER
+ * 0. [INTAKE/HOPPER+CODE] 
+ *      TODO:#0 ADD THE HOPPER PHYSICALLY
+ *      TODO:#1 ADD HOPPER TO FSM CODE
  * 1. [MECHANICAL] Fix wheel imbalance
- *      TODO:#0 Loosen the tight wheels: one motor/wheel/axle is MUCH tighter 
+ *      TODO:#2 Loosen the tight wheels: one motor/wheel/axle is MUCH tighter 
  *      than the other, which causes the robot to TURN instead of drive forward.
  * 2. [SENSOR/CODE] 
- *      TODO:#1 Experiment with keeping/removing the delay at end of calculating
+ *      TODO:#3 Experiment with keeping/removing the delay at end of calculating
  *      the sensor distance
- *      TODO:#2 Implement ``smooth_IR:'' using a running average of (10) 
+ *      TODO:#4 Implement ``smooth_IR:'' using a running average of (10) 
  *      ultrasonic distance readings. 
- *      TODO:#3 Calibrate/make sure sensor is accurate. (We kinda checked this) 
+ *      TODO:#5 Calibrate/make sure sensor is accurate. (We kinda checked this) 
  * 3. [FSM/CODE]
- *      TODO:#4 Figure out how LONG the timer needs to be, for turning 90 degrees
+ *      TODO:#6 Figure out how LONG the timer needs to be, for turning 90 degrees
  *      CLOCKWISE and COUNTER-CLOCKWISE. 
- *      TODO:#5 Figure out the THRESHOLD for when the robot SEES the wall.
- *      TODO:#6 Code up the rest of the FSM.
+ *      TODO:#7 Figure out the THRESHOLD for when the robot SEES the wall.
+ *    DONE:#8 Code up the rest of the FSM.
  * 4. [ELECTRICAL]
- *      TODO:#8 figure out WHY the regulator gets so HOT (14V -> 5V). Is it really
+ *      TODO:#9 figure out WHY the regulator gets so HOT (14V -> 5V). Is it really
  *      because we've been using it for too long? 
- *      TODO:#9 figure out if it's OKAY/SAFE to use the motor driver's onboard 5V
+ *      TODO:#10 figure out if it's OKAY/SAFE to use the motor driver's onboard 5V
  *      SUPPLY to drive our (1) Arduino and (2) our ultrasonic sensor. 
  * 5. Style (for da bonus points)
- *      TODO:#7 use `ifdef/endif' for SERIAL_ON instead of `if (SERIAL_ON)'
+ *    DONE:#11 use `ifdef/endif' for SERIAL_ON instead of `if (SERIAL_ON)'
  */
 
 
@@ -43,12 +45,19 @@
 #define TURN_SCORE_THRESHOLD 8.5
 #define TURN_WALL_DURATION 465 // SET THIS LATER
 #define TURN_SCORING_DURATION 1000 // SET THIS LATER
+#define HOPPER_DURATION 10
 
-/*---------------General Constants --------------------------*/
-#define SERIAL_ON true
+/*---------------USER_DEFINED THINGS --------------------------*/
+#define SERIAL_ON
+// #define TESTING_ROBOT
+#define HOPPER
+
 #define SONAR_DELAY 0
 // TODO: Keep array of 10 values and use that value (smooth IR)
 #define MOTOR_SPEED 255
+#define MAX_INDEX 10
+#define INITIAL_WALL_DISTANCE 85
+#define INITIAL_DELAY 8000
 
 /*---------------Pin Definitions--------------------------*/
 #define MOTOR_R_ENABLE 2
@@ -68,11 +77,14 @@
 /*---------------State Definitions--------------------------*/
 typedef enum
 {
-  MOVING_TOWARD_WALL,
+  LOADING,
+  MOVING_TO_WALL,
   TURN_WALL,
-  MOVING_TOWARD_SCORING,
+  MOVING_TO_SCORING,
   TURN_SCORING,
-  DONE
+  MOVING_TO_DONE,
+  DONE,
+  UNLOADING,
 } States_t;
 
 /*---------------Module Variables---------------------------*/
@@ -82,62 +94,204 @@ bool passed_junction_1, passed_junction_2;
 volatile States_t state;
 volatile int curr_dist;
 
+static Metro hopperTimer = Metro(HOPPER_DURATION);
 static Metro turnWallTimer = Metro(TURN_WALL_DURATION);  // 90 degree turn one-way
 static Metro turnScoringTimer = Metro(TURN_SCORING_DURATION);  // 90 degree turn the-other-way
+
 static Metro distanceTimer = Metro(SONAR_DELAY); // delay between computing sonar_distance
 volatile int sonarvalues[MAX_INDEX+1];
 volatile int sonar_index = 0;
 
 /*---------------Function Prototypes---------------------------*/
 void determine_team();
+String print_state(int state);
+
 void initialize_motor_pins();
+void stop_motors();
 void motor_l_stop();
 void motor_r_stop();
+void drive_forward_motors();
 void motor_r_forward();
 void motor_l_forward();
+void drive_backward_motors();
 void motor_r_backward();
 void motor_l_backward();
-String print_state(int state);
-void firstTurn();
-void secondTurn();
+
+void turnTowardWall();
+void turnTowardScoring();
+
+void initialize_sonar_pins();
 void sonar_distance(int pingPin, int echoPin);
 
-/* GOAL: Code up the FSM for the robot
+void initialize_hopper_pins();
+void hopper_intake();
+void hopper_outtake();
+void hopper_stop();
 
-   States: 
-   - MOVING_FWD: starting state, move forward with same speed on both motors
-   - TURN_WALL: moving towards side wall/other loading zone
-   - TURN_SCORING: moving towards scoring zone
-   - DONE: beat brick!
- */
+/*---------------Setup and Loop---------------------------*/
 
 void setup() {
   // put your setup code here, to run once:
-  if (SERIAL_ON) Serial.begin(9600);
+  #ifdef SERIAL_ON
+  Serial.begin(9600);
+  #endif
 
   initialize_motor_pins();
-  pinMode(TRIGGER, OUTPUT);
-  pinMode(ECHO, INPUT);
-
-  curr_dist = 84;
-  delay(8000);
+  initialize_sonar_pins();
+  #ifdef HOPPER
+  initialize_hopper_pins();
+  #endif
 
   determine_team();
+  state = MOVING_TO_WALL;
 
-  distanceTimer.reset();
+  delay(INITIAL_DELAY);
+  curr_dist = INITIAL_WALL_DISTANCE;
+  // distanceTimer.reset();
 
-  state = MOVING_TOWARD_WALL;
-  passed_junction_1 = false;
-  passed_junction_2 = false;
+  hopperTimer.reset();
 }
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  bool close_to_wall = false;
+
+  sonar_distance(TRIGGER, ECHO);
+
+  #ifdef SERIAL_ON
+  Serial.print("State: ");
+  Serial.print(print_state(state));
+  Serial.print(", Distance : ");
+   Serial.println(curr_dist);
+  #endif
+
+  switch (state) {
+    case LOADING:
+      if (hopperTimer.check()) {
+        break;
+      }
+
+    case MOVING_TO_WALL:
+      // if we're 12 rad 2 = 17ish in. away from opposite wall
+      close_to_wall = (curr_dist <= TURN_WALL_THRESHOLD);
+      if (close_to_wall) {  // time to do an in-place turn
+        state = TURN_WALL;
+        turnWallTimer.reset();
+        turnTowardWall();
+      } else { // still just moving forward
+        motor_l_forward();
+        motor_r_forward();
+      }
+      break;
+    
+    case TURN_WALL:
+      if (turnWallTimer.check()) {
+        #ifndef TESTING_ROBOT
+        state = MOVING_TO_SCORING;
+        motor_l_forward();
+        motor_r_forward();
+        #endif
+
+        #ifdef TESTING_ROBOT
+        state = DONE;
+        motor_l_stop();
+        motor_r_stop();
+        #endif
+
+      } else { // keep turning
+        turnTowardWall();
+      }
+      break;
+    
+    case MOVING_TO_SCORING:
+      close_to_wall = (curr_dist <= TURN_SCORE_THRESHOLD);
+      if (close_to_wall) {
+        state = TURN_SCORING;
+        turnScoringTimer.reset();
+        turnTowardScoring();
+      } else {    
+        motor_l_forward();
+        motor_r_forward();
+      }
+      break;
+    
+    case TURN_SCORING:
+      if (turnScoringTimer.check()) {
+        state = MOVING_TO_DONE;
+        motor_l_forward();
+        motor_r_forward();
+      } else {
+        turnTowardScoring();
+      }
+      break;
+    
+    case MOVING_TO_DONE:
+      close_to_wall = (curr_dist <= DONE_THRESHOLD);
+      if (close_to_wall) {
+        state = DONE;
+        motor_l_stop();
+        motor_r_stop();
+      } else {
+        motor_l_forward();
+        motor_r_forward();
+      }
+      break;
+    
+    case DONE:
+      motor_l_stop();
+      motor_r_stop();
+      break;
+  
+    default: 
+      motor_l_stop();
+      motor_r_stop();
+      break;
+  }
+
+  delay(500);
+}
+
+/*---------------General Auxiliary Functions---------------------------*/
 
 void determine_team()
 {
   team = digitalRead(TEAM_PIN) ? Team::RED : Team::BLUE;
-  if (SERIAL_ON) Serial.print("GO ");
-  if (SERIAL_ON) Serial.print(team == Team::RED ? "RED" : "BLUE");
-  if (SERIAL_ON) Serial.println(" TEAM");
+
+  #ifdef SERIAL_ON
+  Serial.print("GO ");
+  Serial.print(team == Team::RED ? "RED" : "BLUE");
+  Serial.println(" TEAM");
+  #endif
 }
+
+String print_state(int state) 
+{
+  switch (state){
+    case MOVING_TO_WALL: 
+      return "MOVING_TO_WALL";
+
+    case TURN_WALL: 
+      return "TURN_WALL";
+      
+    case MOVING_TO_SCORING: 
+      return "MOVING_TO_SCORING";
+
+    case TURN_SCORING: 
+      return "TURN_SCORING";
+
+    case MOVING_TO_DONE: 
+      return "MOVING_TO_DONE";
+      
+    case DONE:
+      return "DONE";
+
+    default:
+      return "UNKNOWN";
+  }
+  return "UNKNOWN";
+}
+
+/*---------------Motor Functions---------------------------*/
 
 void initialize_motor_pins()
 {
@@ -147,6 +301,12 @@ void initialize_motor_pins()
   pinMode(MOTOR_L_ENABLE, OUTPUT);
   pinMode(MOTOR_L_DIR_1, OUTPUT);
   pinMode(MOTOR_L_DIR_2, OUTPUT);
+}
+
+void stop_motors() 
+{
+  motor_r_stop();
+  motor_l_stop();
 }
 
 void motor_r_stop()
@@ -160,6 +320,12 @@ void motor_l_stop()
   // analogWrite(MOTOR_L_ENABLE, 150);
   digitalWrite(MOTOR_L_DIR_1, LOW);
   digitalWrite(MOTOR_L_DIR_2, LOW);
+}
+
+void drive_forward_motors()
+{
+  motor_r_forward();
+  motor_l_forward();
 }
 
 void motor_r_forward()
@@ -176,6 +342,12 @@ void motor_l_forward()
   digitalWrite(MOTOR_L_DIR_2, HIGH);
 }
 
+void drive_backward_motors()
+{
+  motor_r_backward();
+  motor_l_backward();
+}
+
 void motor_r_backward()
 {
   // analogWrite(MOTOR_R_ENABLE, 150);
@@ -190,168 +362,108 @@ void motor_l_backward()
   digitalWrite(MOTOR_L_DIR_2, LOW);
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
-  // if (SERIAL_ON) Serial.print("State: ");
-  // if (SERIAL_ON) Serial.println(print_state(state));
-
-  sonar_distance(TRIGGER, ECHO);
-
-  if (SERIAL_ON) Serial.print("Distance : ");
-  if (SERIAL_ON) Serial.println(curr_dist);
-  /*if (curr_dist < 12) {
-    motor_r_forward();
-    motor_l_backward();
-  }
-*/
-  switch (state) {
-    case MOVING_TOWARD_WALL:
-      // if we're 12 rad 2 = 17ish in. away from opposite wall
-      if (!passed_junction_1 && curr_dist <= TURN_WALL_THRESHOLD) { // time to do an in-place turn
-        if (SERIAL_ON) Serial.println("MOVING_TOWARD_WALL => TURN_WALL");
-        state = TURN_WALL;
-        turnWallTimer.reset();
-        firstTurn();
-        passed_junction_1 = true;
-      // } else if (passed_junction_1 && curr_dist <= TURN_SCORE_THRESHOLD) { // time to do an in-place turn
-      //   if (SERIAL_ON) Serial.println("MOVING_FWD => TURN_SCORING");
-      //   state = TURN_SCORING;
-      //   turnScoringTimer.reset();
-      //   secondTurn();
-      //   passed_junction_2 = true;
-      } else { // still just moving forward
-        // driveMotorsForward();
-        motor_l_forward();
-        motor_r_forward();
-      }
-      break;
-    
-    case TURN_WALL:
-      if (turnWallTimer.check()) {
-        // motor_l_forward();
-        // motor_r_forward();
-        motor_l_stop();
-        motor_r_stop();
-        state = MOVING_TOWARD_SCORING;
-        if (SERIAL_ON) Serial.println("TURN_WALL => MOVING_TOWARD_SCORING");
-      } else {
-        // keep turning;
-        firstTurn();
-      }
-      break;
-    
-    case MOVING_TOWARD_SCORING:
-       while (curr_dist > TRAVEL_TO_LONG_WALL_THRESHOLD) {
-          
-          motor_l_forward();
-          motor_r_forward();
-      }
-      // once that loop is broken 
-     firstTurn(); // reuse function to turn 90 degrees
-      
-
-    // sierra is updating 
-      motor_l_stop();
-      motor_r_stop();
-      break;
-  
-    default: 
-      // if (SERIAL_ON) Serial.println("AHHHHHHHHH");
-      motor_l_stop();
-      motor_r_stop();
-      break;
-  }
-
-  delay(500);
-
+void turn_left_motors()
+{
+  motor_l_backward();
+  motor_r_forward();
 }
 
-void firstTurn() {
-  if (team == Team::RED){
-    // turn right for X secs
-    motor_l_forward();
-    motor_r_backward();
-  }
-  else {
-    // turn left for X secs 
-    // driveLeftMotor(BACKWARD);
-    motor_l_backward();
-    // driveRightMotor(FORWARD);
-    motor_r_forward();
-  }
+void turn_right_motors()
+{
+  motor_l_forward();
+  motor_r_backward();
 }
 
-void secondTurn() {
+void turnTowardWall() 
+{
   if (team == Team::RED) {
-    // turn left for X secs
-    motor_l_backward();
-    motor_r_forward();
-  }
-  else {
-    // turn right for X secs 
-    motor_l_forward();
-    motor_r_backward();
+    turn_right_motors();
+  } else { 
+    turn_left_motors();
   }
 }
 
-String print_state(int state) {
-  switch (state){
-    case MOVING_TOWARD_WALL: 
-      return "MOVING_FWD";
-
-    case TURN_WALL: 
-      return "TURN_WALL";
-      
-    case MOVING_TOWARD_SCORING: 
-      return "MOVING_TOWARD_SCORING";
-
-    /*  
-    case TURN_SCORING: 
-      return "TURN_SCORING";
-
-    case DONE:
-      return "DONE";
-    */
-   default:
-    return "UNKNOWN";
+void turnTowardScoring() 
+{
+  if (team == Team::RED) {
+    turn_left_motors();
+  } else { 
+    turn_right_motors();
   }
-  return "UNKNOWN";
+}
+
+/*---------------Sonar Functions---------------------------*/
+
+void initialize_sonar_pins() 
+{
+  pinMode(TRIGGER, OUTPUT);
+  pinMode(ECHO, INPUT);
 }
 
 /* From https://www.tutorialspoint.com/arduino/arduino_ultrasonic_sensor.htm */
-void sonar_distance(int pingPin, int echoPin) {
-  if (distanceTimer.check()) {
-    digitalWrite(pingPin, LOW);
-    delayMicroseconds(2);
-    digitalWrite(pingPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(pingPin, LOW);
-    long duration = pulseIn(echoPin, HIGH);
+void sonar_distance() 
+{
+  // NOTE: Removed 100ms timer/delay 
+  digitalWrite(TRIGGER, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIGGER, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIGGER, LOW);
 
-    //curr_dist = (duration) / 74 / 2;
- //averaging code
-   if (sonar_index < MAX_INDEX) {
+  long duration = pulseIn(ECHO, HIGH);
+
+
+  if (sonar_index < MAX_INDEX) {
     sonarvalues[sonar_index] = (duration) / 74 / 2;
-    sonar_index++;
-   }
-   else {
-      //verage of arry
-      int sum = 0;
-      for (int i = 0; i < MAX_INDEX; i++) {
-        sum += sonarvalues[i];
+  } else {
+    //verage of arry
+    int sum = 0;
+    for (int i = 0; i < MAX_INDEX; i++) {
+      sum += sonarvalues[i];
 
-      }
-      curr_dist = sum/MAX_INDEX;
-      sonar_index  =  0;
-   }
-   
-
-    // cm = (duration) / 29 / 2;
-    //if (SERIAL_ON) Serial.print(curr_dist);
-    //if (SERIAL_ON) Serial.print("in, ");
-    // if (SERIAL_ON) Serial.print(cm);
-    // if (SERIAL_ON) Serial.print("cm");
-    //if (SERIAL_ON) Serial.println();
-    distanceTimer.reset();
+    }
+    curr_dist = sum/MAX_INDEX;
+    sonar_index  =  0;
   }
+  
+  #ifdef SERIAL_ON
+  Serial.print(curr_dist);
+  Serial.print("in, ");
+  #endif
+
+/* calculate in cm
+  cm = (duration) / 29 / 2;
+  #ifdef
+  Serial.print(cm);
+  Serial.print("cm");
+  #endif
+*/
+
+  Serial.println();
+}
+
+void initialize_hopper_pins() 
+{
+  pinMode(MOTOR_HOPPER_ENABLE, OUTPUT);
+  pinMode(MOTOR_HOPPER_DIR_1, OUTPUT);
+  pinMode(MOTOR_HOPPER_DIR_2, OUTPUT);
+}
+
+void hopper_intake() 
+{
+  analogWrite(MOTOR_HOPPER_ENABLE, 200);
+  digitalWrite(MOTOR_HOPPER_DIR_1, LOW);
+  digitalWrite(MOTOR_HOPPER_DIR_2, HIGH);
+}
+
+void hopper_stop() 
+{
+  analogWrite(MOTOR_HOPPER_ENABLE, 0);
+}
+
+void hopper_outtake() 
+{
+  analogWrite(MOTOR_HOPPER_ENABLE, 255);
+  digitalWrite(MOTOR_HOPPER_DIR_1, HIGH);
+  digitalWrite(MOTOR_HOPPER_DIR_2, LOW);
 }
