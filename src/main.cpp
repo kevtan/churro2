@@ -38,7 +38,7 @@
 
 
 /*---------------Threshold Definitions--------------------------*/
-#define TURN_WALL_THRESHOLD 55
+#define TURN_WALL_THRESHOLD 75
 #define TRAVEL_TO_LONG_WALL_THRESHOLD 3
 #define SCORING_ZONE_THRESHOLD 2
 #define TURN_WALL_DURATION 465 // SET THIS LATER
@@ -143,7 +143,7 @@ void setup() {
 
   distanceTimer.reset();
 
-  state = MOVING_TOWARD_WALL;
+  state = LOADING;
   passed_junction_1 = false;
   passed_junction_2 = false;
 }
@@ -222,22 +222,19 @@ void loop() {
   }
 */
   switch (state) {
+    case LOADING:
+      hopper_intake();
+      state = MOVING_TOWARD_WALL;
+      break;
+    
     case MOVING_TOWARD_WALL:
       // if we're 12 rad 2 = 17ish in. away from opposite wall
-      if (!passed_junction_1 && curr_dist <= TURN_WALL_THRESHOLD) { // time to do an in-place turn
+      if (curr_dist <= TURN_WALL_THRESHOLD) { // time to do an in-place turn
         if (SERIAL_ON) Serial.println("MOVING_TOWARD_WALL => TURN_WALL");
         state = TURN_WALL;
         turnWallTimer.reset();
         firstTurn();
-        passed_junction_1 = true;
-      // } else if (passed_junction_1 && curr_dist <= TURN_SCORE_THRESHOLD) { // time to do an in-place turn
-      //   if (SERIAL_ON) Serial.println("MOVING_FWD => TURN_SCORING");
-      //   state = TURN_SCORING;
-      //   turnScoringTimer.reset();
-      //   secondTurn();
-      //   passed_junction_2 = true;
-      } else { // still just moving forward
-        // driveMotorsForward();
+      } else { 
         motor_l_forward();
         motor_r_forward();
       }
@@ -258,29 +255,53 @@ void loop() {
       break;
     
     case MOVING_TOWARD_LONG_WALL:
-      while (sonar_distance() > TRAVEL_TO_LONG_WALL_THRESHOLD) {
-        Serial.print("Moving to long wall, ");
+      if (curr_dist <= TRAVEL_TO_LONG_WALL_THRESHOLD) { // time to do an in-place turn
+        if (SERIAL_ON) Serial.println("MOVING_TOWARD_LONG_WALL => TURN_SCORING");
+        state = TURN_SCORING;
+        turnScoringTimer.reset();
+        secondTurn();
+      } else { 
         motor_l_forward();
         motor_r_forward();
       }
-
-      state = TURN_SCORING;
-      Serial.println("Starting turn scoring timer");
-      turnScoringTimer.reset();
-      
       break;
-
+    
     case TURN_SCORING:
       if (turnScoringTimer.check()) {
         motor_l_stop();
         motor_r_stop();
         state = MOVING_TOWARD_SCORING;
-
+        if (SERIAL_ON) Serial.println("TURN_SCORING => MOVING_TOWARD_SCORING");
       } else {
-        secondTurn();    
-        Serial.print("turning");
+        
+        secondTurn();
       }
       break;
+    
+    // case MOVING_TOWARD_LONG_WALL:
+    //   while (sonar_distance() > TRAVEL_TO_LONG_WALL_THRESHOLD) {
+    //     Serial.print("Moving to long wall, ");
+    //     motor_l_forward();
+    //     motor_r_forward();
+    //   }
+    //   Serial.println();
+    //   state = TURN_SCORING;
+    //   Serial.println("Starting turn scoring timer");
+    //   turnScoringTimer.reset();
+    //   break;
+
+    // case TURN_SCORING:
+    //   Serial.println("HELLO");
+    //   if (turnScoringTimer.check()) {
+    //     motor_l_stop();
+    //     motor_r_stop();
+    //     state = MOVING_TOWARD_SCORING;
+
+    //   } else {
+    //     secondTurn();    
+    //     Serial.print("turning");
+    //   }
+    //   break;
 
     case MOVING_TOWARD_SCORING:
       bool close_to_wall = (sonar_distance() <= SCORING_ZONE_THRESHOLD);
@@ -297,6 +318,8 @@ void loop() {
     case DONE:
       motor_l_stop();
       motor_r_stop();
+      hopper_outtake();
+
       break;
   
     default: 
@@ -407,8 +430,8 @@ int sonar_distance() {
    
 
     // cm = (duration) / 29 / 2;
-    if (SERIAL_ON) Serial.print(curr_dist);
-    if (SERIAL_ON) Serial.println("in, ");
+    //if (SERIAL_ON) Serial.print(curr_dist);
+    //if (SERIAL_ON) Serial.println("in, ");
     // if (SERIAL_ON) Serial.print(cm);
     // if (SERIAL_ON) Serial.print("cm");
     //if (SERIAL_ON) Serial.println();
