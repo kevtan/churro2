@@ -49,11 +49,10 @@
 
 /*---------------USER_DEFINED THINGS --------------------------*/
 #define SERIAL_ON
-// #define TESTING_ROBOT
-#define HOPPER
+#define TESTING_ROBOT
+// #define HOPPER
 
 #define SONAR_DELAY 0
-// TODO: Keep array of 10 values and use that value (smooth IR)
 #define MOTOR_SPEED 255
 #define MAX_INDEX 10
 #define INITIAL_WALL_DISTANCE 85
