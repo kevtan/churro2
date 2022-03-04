@@ -43,8 +43,9 @@
 #define TURN_WALL_THRESHOLD 45
 #define TRAVEL_TO_LONG_WALL_THRESHOLD 8
 #define TURN_SCORE_THRESHOLD 8.5
+#define DONE_THRESHOLD 5
 #define TURN_WALL_DURATION 465 // SET THIS LATER
-#define TURN_SCORING_DURATION 1000 // SET THIS LATER
+#define TURN_SCORING_DURATION 465 // SET THIS LATER
 #define HOPPER_DURATION 10
 
 /*---------------USER_DEFINED THINGS --------------------------*/
@@ -88,7 +89,6 @@ typedef enum
 
 /*---------------Module Variables---------------------------*/
 Team team;
-bool passed_junction_1, passed_junction_2;
 
 volatile States_t state;
 volatile int curr_dist;
@@ -172,7 +172,7 @@ void loop() {
 
     case MOVING_TO_WALL:
       // if we're 12 rad 2 = 17ish in. away from opposite wall
-      close_to_wall = (curr_dist <= TURN_WALL_THRESHOLD);
+      close_to_wall = (curr_dist <= TRAVEL_TO_LONG_WALL_THRESHOLD);
       if (close_to_wall) {  // time to do an in-place turn
         state = TURN_WALL;
         turnWallTimer.reset();
