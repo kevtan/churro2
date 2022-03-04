@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Metro.h>
+#include <Churro.h>
 
 // Miscellaneous
 #define BAUD_RATE 9600
@@ -11,6 +12,9 @@
 #define MOTOR_L_ENABLE 7
 #define MOTOR_L_DIR_1 6
 #define MOTOR_L_DIR_2 5
+
+// Miscellaneous Pin Definitions
+#define TEAM_PIN 14
 
 // Status LED Definitions
 #define STATUS_LED_PIN LED_BUILTIN
@@ -28,9 +32,11 @@ Metro status_led_timer = Metro(STATUS_LED_TIME_INTERVAL_MS);
 
 // Global Variables
 bool on_line = false;
+Team team;
 
 // Function Prototypes
 void initialize_motor_pins();
+void determine_team();
 void motor_r_forward();
 void motor_l_forward();
 void motor_r_stop();
@@ -46,6 +52,7 @@ void setup()
 {
   Serial.begin(BAUD_RATE);
   initialize_motor_pins();
+  determine_team();
 }
 
 void loop()
@@ -68,6 +75,11 @@ void initialize_motor_pins()
   pinMode(MOTOR_L_DIR_2, OUTPUT);
 }
 
+void determine_team()
+{
+  team = digitalRead(TEAM_PIN) ? Team::RED : Team::BLUE;
+}
+
 void motor_r_forward()
 {
   analogWrite(MOTOR_R_ENABLE, 150);
@@ -82,11 +94,13 @@ void motor_l_forward()
   digitalWrite(MOTOR_L_DIR_2, HIGH);
 }
 
-void motor_r_stop() {
+void motor_r_stop()
+{
   analogWrite(MOTOR_R_ENABLE, 0);
 }
 
-void motor_l_stop() {
+void motor_l_stop()
+{
   analogWrite(MOTOR_L_ENABLE, 0);
 }
 
@@ -104,7 +118,8 @@ void resp_status_led_timer_expired()
 
 bool test_on_line()
 {
-  if (not on_line and analogRead(IR_SENSOR_CC) < LINE_THRESHOLD_CC) {
+  if (not on_line and analogRead(IR_SENSOR_CC) < LINE_THRESHOLD_CC)
+  {
     on_line = true;
     return true;
   }
@@ -113,7 +128,8 @@ bool test_on_line()
 
 bool test_off_line()
 {
-  if (on_line and analogRead(IR_SENSOR_CC) >= LINE_THRESHOLD_CC) {
+  if (on_line and analogRead(IR_SENSOR_CC) >= LINE_THRESHOLD_CC)
+  {
     on_line = false;
     return true;
   }
