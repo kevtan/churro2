@@ -38,22 +38,21 @@
 
 
 /*---------------Threshold Definitions--------------------------*/
-#define TURN_WALL_THRESHOLD 43
+#define TURN_WALL_THRESHOLD 25
 #define TRAVEL_TO_LONG_WALL_THRESHOLD 9
 #define SCORING_ZONE_THRESHOLD 2
-#define TURN_WALL_DURATION 490 // SET THIS LATER
-#define TURN_SCORING_DURATION 490 // SET THIS LATER
+#define TURN_WALL_DURATION 520//veer right a lil //515 (lil too short) //490 (orig)
+#define TURN_SCORING_DURATION 540 // 480//490
 #define HOPPER_DURATION 10
 
 /*---------------General Constants --------------------------*/
 #define SERIAL_ON true
-#define SONAR_DELAY 0
-// TODO: Keep array of 10 values and use that value (smooth IR)
-#define MOTOR_SPEED 255
 // #define HOPPER
+
 #define INITIAL_WALL_DISTANCE 85 
 #define INITIAL_DELAY 8000
-
+#define SONAR_DELAY 0
+#define MOTOR_SPEED 255
 
 /*---------------Pin Definitions--------------------------*/
 #define MOTOR_R_ENABLE 2
@@ -94,7 +93,7 @@ volatile int curr_dist;
 static Metro hopperTimer = Metro(HOPPER_DURATION); // delay between computing sonar_distance
 static Metro turnWallTimer = Metro(TURN_WALL_DURATION);  // 90 degree turn one-way
 static Metro turnScoringTimer = Metro(TURN_SCORING_DURATION);  // 90 degree turn the-other-way
-static Metro distanceTimer = Metro(SONAR_DELAY); // delay between computing sonar_distance
+// static Metro distanceTimer = Metro(SONAR_DELAY); // delay between computing sonar_distance
 volatile int sonarvalues[MAX_INDEX+1];
 volatile int sonar_index = 0;
 
@@ -130,30 +129,35 @@ void hopper_stop();
 
 void setup() {
   // put your setup code here, to run once:
-  if (SERIAL_ON) Serial.begin(9600);
+  #ifdef SERIAL_ON
+  Serial.begin(9600);
+  #endif
 
   initialize_motor_pins();
   pinMode(TRIGGER, OUTPUT);
   pinMode(ECHO, INPUT);
 
-  curr_dist = 84;
-  delay(8000);
+  Serial.println("STARTING");
+
+  curr_dist = INITIAL_WALL_DISTANCE;
+  delay(INITIAL_DELAY);
 
   determine_team();
 
-  distanceTimer.reset();
+  // distanceTimer.reset();
 
   state = LOADING;
-  passed_junction_1 = false;
-  passed_junction_2 = false;
 }
 
 void determine_team()
 {
   team = digitalRead(TEAM_PIN) ? Team::RED : Team::BLUE;
-  if (SERIAL_ON) Serial.print("GO ");
-  if (SERIAL_ON) Serial.print(team == Team::RED ? "RED" : "BLUE");
-  if (SERIAL_ON) Serial.println(" TEAM");
+
+  #ifdef SERIAL_ON
+  Serial.print("GO ");
+  Serial.print(team == Team::RED ? "RED" : "BLUE");
+  Serial.println(" TEAM");
+  #endif
 }
 
 void initialize_motor_pins()
@@ -209,18 +213,15 @@ void motor_l_backward()
 
 void loop() {
   // put your main code here, to run repeatedly:
-  if (SERIAL_ON) Serial.print("State: ");
-  if (SERIAL_ON) Serial.print(print_state(state));
-
   sonar_distance();
 
-  if (SERIAL_ON) Serial.print(", Distance : ");
-  if (SERIAL_ON) Serial.println(curr_dist);
-  /*if (curr_dist < 12) {
-    motor_r_forward();
-    motor_l_backward();
-  }
-*/
+  #ifdef SERIAL_ON
+  Serial.print("State: ");
+  Serial.print(print_state(state));
+  Serial.print(", Distance : ");
+  Serial.println(curr_dist);
+  #endif
+
   switch (state) {
     case LOADING:
       hopper_intake();
@@ -230,10 +231,13 @@ void loop() {
     case MOVING_TOWARD_WALL:
       // if we're 12 rad 2 = 17ish in. away from opposite wall
       if (curr_dist <= TURN_WALL_THRESHOLD) { // time to do an in-place turn
-        if (SERIAL_ON) Serial.println("MOVING_TOWARD_WALL => TURN_WALL");
         state = TURN_WALL;
         turnWallTimer.reset();
         firstTurn();
+
+        #ifdef SERIAL_ON
+        Serial.println("MOVING_TOWARD_WALL => TURN_WALL");
+        #endif
       } else { 
         motor_l_forward();
         motor_r_forward();
@@ -242,24 +246,28 @@ void loop() {
     
     case TURN_WALL:
       if (turnWallTimer.check()) {
-        // motor_l_forward();
-        // motor_r_forward();
         motor_l_stop();
         motor_r_stop();
         state = MOVING_TOWARD_LONG_WALL;
-        if (SERIAL_ON) Serial.println("TURN_WALL => MOVING_TOWARD_LONG_WALL");
+
+        #ifdef SERIAL_ON
+        Serial.println("TURN_WALL => MOVING_TOWARD_LONG_WALL");
+        #endif
+        
       } else {
-        // keep turning;
         firstTurn();
       }
       break;
     
     case MOVING_TOWARD_LONG_WALL:
       if (curr_dist <= TRAVEL_TO_LONG_WALL_THRESHOLD) { // time to do an in-place turn
-        if (SERIAL_ON) Serial.println("MOVING_TOWARD_LONG_WALL => TURN_SCORING");
         state = TURN_SCORING;
         turnScoringTimer.reset();
         secondTurn();
+
+        #ifdef SERIAL_ON
+        Serial.println("MOVING_TOWARD_LONG_WALL => TURN_SCORING");
+        #endif
       } else { 
         motor_l_forward();
         motor_r_forward();
@@ -271,13 +279,33 @@ void loop() {
         motor_l_stop();
         motor_r_stop();
         state = MOVING_TOWARD_SCORING;
-        if (SERIAL_ON) Serial.println("TURN_SCORING => MOVING_TOWARD_SCORING");
+
+        #ifdef SERIAL_ON
+        Serial.println("TURN_SCORING => MOVING_TOWARD_SCORING");
+        #endif
       } else {
-        
         secondTurn();
       }
       break;
     
+    case MOVING_TOWARD_SCORING:
+      if (sonar_distance() <= SCORING_ZONE_THRESHOLD) 
+      {
+        state = DONE;
+        motor_l_stop();
+        motor_r_stop();
+      } else {
+        motor_l_forward();
+        motor_r_forward();
+      }
+      break;
+    
+    case DONE:
+      motor_l_stop();
+      motor_r_stop();
+      hopper_outtake();
+      break;
+  
     // case MOVING_TOWARD_LONG_WALL:
     //   while (sonar_distance() > TRAVEL_TO_LONG_WALL_THRESHOLD) {
     //     Serial.print("Moving to long wall, ");
@@ -296,41 +324,20 @@ void loop() {
     //     motor_l_stop();
     //     motor_r_stop();
     //     state = MOVING_TOWARD_SCORING;
-
     //   } else {
     //     secondTurn();    
     //     Serial.print("turning");
     //   }
     //   break;
 
-    case MOVING_TOWARD_SCORING:
-      bool close_to_wall = (sonar_distance() <= SCORING_ZONE_THRESHOLD);
-      if (close_to_wall) {
-        state = DONE;
-        motor_l_stop();
-        motor_r_stop();
-      } else {
-        motor_l_forward();
-        motor_r_forward();
-      }
-      break;
-    
-    case DONE:
+    default: 
       motor_l_stop();
       motor_r_stop();
       hopper_outtake();
-
-      break;
-  
-    default: 
-      // if (SERIAL_ON) Serial.println("AHHHHHHHHH");
-      motor_l_stop();
-      motor_r_stop();
       break;
   }
 
   delay(150);
-
 }
 
 void firstTurn() {
@@ -340,10 +347,7 @@ void firstTurn() {
     motor_r_backward();
   }
   else {
-    // turn left for X secs 
-    // driveLeftMotor(BACKWARD);
     motor_l_backward();
-    // driveRightMotor(FORWARD);
     motor_r_forward();
   }
 }
@@ -403,7 +407,7 @@ void initialize_sonar_pins()
 
 /* From https://www.tutorialspoint.com/arduino/arduino_ultrasonic_sensor.htm */
 int sonar_distance() {
-  if (distanceTimer.check()) {
+  // if (distanceTimer.check()) {
     digitalWrite(TRIGGER, LOW);
     delayMicroseconds(2);
     digitalWrite(TRIGGER, HIGH);
@@ -436,9 +440,8 @@ int sonar_distance() {
     // if (SERIAL_ON) Serial.print(cm);
     // if (SERIAL_ON) Serial.print("cm");
     //if (SERIAL_ON) Serial.println();
-    distanceTimer.reset();
+    // distanceTimer.reset();
     return curr_dist;
-  }
 }
 
 
