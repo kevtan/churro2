@@ -12,28 +12,30 @@
  * -- working intake + outtake mechanism  
  * 
  * TO DOs
- * 0. [INTAKE/HOPPER] TODO:#00 ADD THE HOPPER
+ * 0. [INTAKE/HOPPER+CODE] 
+ *      TODO:#0 ADD THE HOPPER PHYSICALLY
+ *      TODO:#1 ADD HOPPER TO FSM CODE
  * 1. [MECHANICAL] Fix wheel imbalance
- *      TODO:#0 Loosen the tight wheels: one motor/wheel/axle is MUCH tighter 
+ *      TODO:#2 Loosen the tight wheels: one motor/wheel/axle is MUCH tighter 
  *      than the other, which causes the robot to TURN instead of drive forward.
  * 2. [SENSOR/CODE] 
- *      TODO:#1 Experiment with keeping/removing the delay at end of calculating
+ *      TODO:#3 Experiment with keeping/removing the delay at end of calculating
  *      the sensor distance
- *      TODO:#2 Implement ``smooth_IR:'' using a running average of (10) 
+ *      TODO:#4 Implement ``smooth_IR:'' using a running average of (10) 
  *      ultrasonic distance readings. 
- *      TODO:#3 Calibrate/make sure sensor is accurate. (We kinda checked this) 
+ *      TODO:#5 Calibrate/make sure sensor is accurate. (We kinda checked this) 
  * 3. [FSM/CODE]
- *      TODO:#4 Figure out how LONG the timer needs to be, for turning 90 degrees
+ *      TODO:#6 Figure out how LONG the timer needs to be, for turning 90 degrees
  *      CLOCKWISE and COUNTER-CLOCKWISE. 
- *      TODO:#5 Figure out the THRESHOLD for when the robot SEES the wall.
- *      TODO:#6 Code up the rest of the FSM.
+ *      TODO:#7 Figure out the THRESHOLD for when the robot SEES the wall.
+ *    DONE:#8 Code up the rest of the FSM.
  * 4. [ELECTRICAL]
- *      TODO:#8 figure out WHY the regulator gets so HOT (14V -> 5V). Is it really
+ *      TODO:#9 figure out WHY the regulator gets so HOT (14V -> 5V). Is it really
  *      because we've been using it for too long? 
- *      TODO:#9 figure out if it's OKAY/SAFE to use the motor driver's onboard 5V
+ *      TODO:#10 figure out if it's OKAY/SAFE to use the motor driver's onboard 5V
  *      SUPPLY to drive our (1) Arduino and (2) our ultrasonic sensor. 
  * 5. Style (for da bonus points)
- *      TODO:#7 use `ifdef/endif' for SERIAL_ON instead of `if (SERIAL_ON)'
+ *    DONE:#11 use `ifdef/endif' for SERIAL_ON instead of `if (SERIAL_ON)'
  */
 
 
@@ -43,15 +45,19 @@
 #define DONE_THRESHOLD 5
 #define TURN_WALL_DURATION 1000 // SET THIS LATER
 #define TURN_SCORING_DURATION 1000 // SET THIS LATER
-#define INITIAL_WALL_DISTANCE 85
-#define INITIAL_DELAY 8000
-#define MAX_INDEX 10
+#define HOPPER_DURATION 10
 
-/*---------------General Constants --------------------------*/
+/*---------------USER_DEFINED THINGS --------------------------*/
 #define SERIAL_ON
+// #define TESTING_ROBOT
+#define HOPPER
+
 #define SONAR_DELAY 0
 // TODO: Keep array of 10 values and use that value (smooth IR)
 #define MOTOR_SPEED 255
+#define MAX_INDEX 10
+#define INITIAL_WALL_DISTANCE 85
+#define INITIAL_DELAY 8000
 
 /*---------------Pin Definitions--------------------------*/
 #define MOTOR_R_ENABLE 2
@@ -70,12 +76,14 @@
 /*---------------State Definitions--------------------------*/
 typedef enum
 {
+  LOADING,
   MOVING_TO_WALL,
   TURN_WALL,
   MOVING_TO_SCORING,
   TURN_SCORING,
   MOVING_TO_DONE,
-  DONE
+  DONE,
+  UNLOADING,
 } States_t;
 
 /*---------------Module Variables---------------------------*/
@@ -85,8 +93,10 @@ bool passed_junction_1, passed_junction_2;
 volatile States_t state;
 volatile int curr_dist;
 
+static Metro hopperTimer = Metro(HOPPER_DURATION);
 static Metro turnWallTimer = Metro(TURN_WALL_DURATION);  // 90 degree turn one-way
 static Metro turnScoringTimer = Metro(TURN_SCORING_DURATION);  // 90 degree turn the-other-way
+
 static Metro distanceTimer = Metro(SONAR_DELAY); // delay between computing sonar_distance
 volatile int sonarvalues[MAX_INDEX+1];
 volatile int sonar_index = 0;
@@ -112,14 +122,12 @@ void turnTowardScoring();
 void initialize_sonar_pins();
 void sonar_distance(int pingPin, int echoPin);
 
-/* GOAL: Code up the FSM for the robot
+void initialize_hopper_pins();
+void hopper_intake();
+void hopper_outtake();
+void hopper_stop();
 
-   States: 
-   - MOVING_FWD: starting state, move forward with same speed on both motors
-   - TURN_WALL: moving towards side wall/other loading zone
-   - TURN_SCORING: moving towards scoring zone
-   - DONE: beat brick!
- */
+/*---------------Setup and Loop---------------------------*/
 
 void setup() {
   // put your setup code here, to run once:
@@ -129,12 +137,18 @@ void setup() {
 
   initialize_motor_pins();
   initialize_sonar_pins();
+  #ifdef HOPPER
+  initialize_hopper_pins();
+  #endif
+
   determine_team();
   state = MOVING_TO_WALL;
 
   delay(INITIAL_DELAY);
   curr_dist = INITIAL_WALL_DISTANCE;
   // distanceTimer.reset();
+
+  hopperTimer.reset();
 }
 
 void loop() {
@@ -151,6 +165,11 @@ void loop() {
   #endif
 
   switch (state) {
+    case LOADING:
+      if (hopperTimer.check()) {
+        break;
+      }
+
     case MOVING_TO_WALL:
       // if we're 12 rad 2 = 17ish in. away from opposite wall
       close_to_wall = (curr_dist <= TURN_WALL_THRESHOLD);
@@ -231,6 +250,8 @@ void loop() {
   delay(500);
 }
 
+/*---------------General Auxiliary Functions---------------------------*/
+
 void determine_team()
 {
   team = digitalRead(TEAM_PIN) ? Team::RED : Team::BLUE;
@@ -241,6 +262,35 @@ void determine_team()
   Serial.println(" TEAM");
   #endif
 }
+
+String print_state(int state) 
+{
+  switch (state){
+    case MOVING_TO_WALL: 
+      return "MOVING_TO_WALL";
+
+    case TURN_WALL: 
+      return "TURN_WALL";
+      
+    case MOVING_TO_SCORING: 
+      return "MOVING_TO_SCORING";
+
+    case TURN_SCORING: 
+      return "TURN_SCORING";
+
+    case MOVING_TO_DONE: 
+      return "MOVING_TO_DONE";
+      
+    case DONE:
+      return "DONE";
+
+    default:
+      return "UNKNOWN";
+  }
+  return "UNKNOWN";
+}
+
+/*---------------Motor Functions---------------------------*/
 
 void initialize_motor_pins()
 {
@@ -323,7 +373,8 @@ void turn_right_motors()
   motor_r_backward();
 }
 
-void turnTowardWall() {
+void turnTowardWall() 
+{
   if (team == Team::RED) {
     turn_right_motors();
   } else { 
@@ -331,7 +382,8 @@ void turnTowardWall() {
   }
 }
 
-void turnTowardScoring() {
+void turnTowardScoring() 
+{
   if (team == Team::RED) {
     turn_left_motors();
   } else { 
@@ -339,39 +391,17 @@ void turnTowardScoring() {
   }
 }
 
-String print_state(int state) {
-  switch (state){
-    case MOVING_TO_WALL: 
-      return "MOVING_TO_WALL";
+/*---------------Sonar Functions---------------------------*/
 
-    case TURN_WALL: 
-      return "TURN_WALL";
-      
-    case MOVING_TO_SCORING: 
-      return "MOVING_TO_SCORING";
-
-    case TURN_SCORING: 
-      return "TURN_SCORING";
-
-    case MOVING_TO_DONE: 
-      return "MOVING_TO_DONE";
-      
-    case DONE:
-      return "DONE";
-
-    default:
-      return "UNKNOWN";
-  }
-  return "UNKNOWN";
-}
-
-void initialize_sonar_pins() {
+void initialize_sonar_pins() 
+{
   pinMode(TRIGGER, OUTPUT);
   pinMode(ECHO, INPUT);
 }
 
 /* From https://www.tutorialspoint.com/arduino/arduino_ultrasonic_sensor.htm */
-void sonar_distance() {
+void sonar_distance() 
+{
   // NOTE: Removed 100ms timer/delay 
   digitalWrite(TRIGGER, LOW);
   delayMicroseconds(2);
@@ -409,4 +439,32 @@ void sonar_distance() {
 */
 
   Serial.println();
+}
+
+/*---------------Hopper Functions---------------------------*/
+
+void initialize_hopper_pins() 
+{
+  pinMode(MOTOR_HOPPER_ENABLE, OUTPUT);
+  pinMode(MOTOR_HOPPER_DIR_1, OUTPUT);
+  pinMode(MOTOR_HOPPER_DIR_2, OUTPUT);
+}
+
+void hopper_intake() 
+{
+  analogWrite(MOTOR_HOPPER_ENABLE, 200);
+  digitalWrite(MOTOR_HOPPER_DIR_1, LOW);
+  digitalWrite(MOTOR_HOPPER_DIR_2, HIGH);
+}
+
+void hopper_stop() 
+{
+  analogWrite(MOTOR_HOPPER_ENABLE, 0);
+}
+
+void hopper_outtake() 
+{
+  analogWrite(MOTOR_HOPPER_ENABLE, 255);
+  digitalWrite(MOTOR_HOPPER_DIR_1, HIGH);
+  digitalWrite(MOTOR_HOPPER_DIR_2, LOW);
 }
