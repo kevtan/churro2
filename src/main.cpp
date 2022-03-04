@@ -208,16 +208,14 @@ void loop() {
         turnScoringTimer.reset();
         turnTowardScoring();
       } else {    
-        motor_l_forward();
-        motor_r_forward();
+        drive_forward_motors();
       }
       break;
     
     case TURN_SCORING:
       if (turnScoringTimer.check()) {
         state = MOVING_TO_DONE;
-        motor_l_forward();
-        motor_r_forward();
+        drive_forward_motors();
       } else {
         turnTowardScoring();
       }
@@ -227,22 +225,18 @@ void loop() {
       close_to_wall = (curr_dist <= DONE_THRESHOLD);
       if (close_to_wall) {
         state = DONE;
-        motor_l_stop();
-        motor_r_stop();
+        stop_motors();
       } else {
-        motor_l_forward();
-        motor_r_forward();
+        drive_forward_motors();
       }
       break;
     
     case DONE:
-      motor_l_stop();
-      motor_r_stop();
+      stop_motors();
       break;
   
     default: 
-      motor_l_stop();
-      motor_r_stop();
+      stop_motors();
       break;
   }
 
