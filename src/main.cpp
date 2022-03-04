@@ -39,9 +39,9 @@
 
 /*---------------Threshold Definitions--------------------------*/
 #define TURN_WALL_THRESHOLD 25
-#define TRAVEL_TO_LONG_WALL_THRESHOLD 9
-#define SCORING_ZONE_THRESHOLD 2
-#define TURN_WALL_DURATION 520//veer right a lil //515 (lil too short) //490 (orig)
+#define TRAVEL_TO_LONG_WALL_THRESHOLD 3
+#define SCORING_ZONE_THRESHOLD 1
+#define TURN_WALL_DURATION 515//veer right a lil //515 (lil too short) //490 (orig)
 #define TURN_SCORING_DURATION 540 // 480//490
 #define HOPPER_DURATION 10
 
@@ -50,7 +50,7 @@
 // #define HOPPER
 
 #define INITIAL_WALL_DISTANCE 85 
-#define INITIAL_DELAY 8000
+#define INITIAL_DELAY 5000
 #define SONAR_DELAY 0
 #define MOTOR_SPEED 255
 
@@ -141,11 +141,18 @@ void setup() {
 
   curr_dist = INITIAL_WALL_DISTANCE;
   delay(INITIAL_DELAY);
-
   determine_team();
+  hopper_intake();
+  // *FOR BLUE TEAM ONLY*
+  // doing initial turn inside loading zone to compensate for mechanical issues
+  motor_l_forward();
+  motor_r_backward();
+  delay(125);
+  motor_l_stop();
+  motor_r_stop();
+
 
   // distanceTimer.reset();
-
   state = LOADING;
 }
 
@@ -224,7 +231,7 @@ void loop() {
 
   switch (state) {
     case LOADING:
-      hopper_intake();
+
       state = MOVING_TOWARD_WALL;
       break;
     
@@ -289,6 +296,14 @@ void loop() {
       break;
     
     case MOVING_TOWARD_SCORING:
+
+      motor_l_forward();
+      motor_r_forward();
+      delay(1500);
+      motor_l_stop();
+      motor_r_stop();
+      state = DONE;
+    /*
       if (sonar_distance() <= SCORING_ZONE_THRESHOLD) 
       {
         state = DONE;
@@ -298,6 +313,7 @@ void loop() {
         motor_l_forward();
         motor_r_forward();
       }
+      */
       break;
     
     case DONE:
@@ -337,7 +353,7 @@ void loop() {
       break;
   }
 
-  delay(150);
+  delay(100);
 }
 
 void firstTurn() {
