@@ -38,9 +38,10 @@
 
 
 /*---------------Threshold Definitions--------------------------*/
-#define TURN_WALL_THRESHOLD 5//17
+#define TURN_WALL_THRESHOLD 45
+#define TRAVEL_TO_LONG_WALL_THRESHOLD 8
 #define TURN_SCORE_THRESHOLD 8.5
-#define TURN_WALL_DURATION 1000 // SET THIS LATER
+#define TURN_WALL_DURATION 465 // SET THIS LATER
 #define TURN_SCORING_DURATION 1000 // SET THIS LATER
 
 /*---------------General Constants --------------------------*/
@@ -62,7 +63,7 @@
 #define TRIGGER 18
 #define ECHO 17
 #define TEAM_PIN 14
-#define MAX_INDEX 10
+#define MAX_INDEX 1
 
 /*---------------State Definitions--------------------------*/
 typedef enum
@@ -198,7 +199,11 @@ void loop() {
 
   if (SERIAL_ON) Serial.print("Distance : ");
   if (SERIAL_ON) Serial.println(curr_dist);
-
+  /*if (curr_dist < 12) {
+    motor_r_forward();
+    motor_l_backward();
+  }
+*/
   switch (state) {
     case MOVING_TOWARD_WALL:
       // if we're 12 rad 2 = 17ish in. away from opposite wall
@@ -236,6 +241,16 @@ void loop() {
       break;
     
     case MOVING_TOWARD_SCORING:
+       while (curr_dist > TRAVEL_TO_LONG_WALL_THRESHOLD) {
+          
+          motor_l_forward();
+          motor_r_forward();
+      }
+      // once that loop is broken 
+     firstTurn(); // reuse function to turn 90 degrees
+      
+
+    // sierra is updating 
       motor_l_stop();
       motor_r_stop();
       break;
@@ -248,6 +263,7 @@ void loop() {
   }
 
   delay(500);
+
 }
 
 void firstTurn() {
@@ -312,8 +328,11 @@ void sonar_distance(int pingPin, int echoPin) {
     digitalWrite(pingPin, LOW);
     long duration = pulseIn(echoPin, HIGH);
 
+    //curr_dist = (duration) / 74 / 2;
+ //averaging code
    if (sonar_index < MAX_INDEX) {
     sonarvalues[sonar_index] = (duration) / 74 / 2;
+    sonar_index++;
    }
    else {
       //verage of arry
@@ -325,13 +344,14 @@ void sonar_distance(int pingPin, int echoPin) {
       curr_dist = sum/MAX_INDEX;
       sonar_index  =  0;
    }
+   
 
     // cm = (duration) / 29 / 2;
-    if (SERIAL_ON) Serial.print(curr_dist);
-    if (SERIAL_ON) Serial.print("in, ");
+    //if (SERIAL_ON) Serial.print(curr_dist);
+    //if (SERIAL_ON) Serial.print("in, ");
     // if (SERIAL_ON) Serial.print(cm);
     // if (SERIAL_ON) Serial.print("cm");
-    if (SERIAL_ON) Serial.println();
+    //if (SERIAL_ON) Serial.println();
     distanceTimer.reset();
   }
 }
