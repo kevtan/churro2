@@ -56,7 +56,7 @@
 #define MOTOR_SPEED 255
 #define MAX_INDEX 10
 #define INITIAL_WALL_DISTANCE 85
-#define INITIAL_DELAY 8000
+#define INITIAL_DELAY 2000
 
 /*---------------Pin Definitions--------------------------*/
 #define MOTOR_R_ENABLE 2
