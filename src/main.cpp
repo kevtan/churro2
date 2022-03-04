@@ -142,7 +142,7 @@ void setup() {
   #endif
 
   determine_team();
-  state = MOVING_TO_WALL;
+  state = LOADING;
 
   delay(INITIAL_DELAY);
   curr_dist = INITIAL_WALL_DISTANCE;
@@ -167,8 +167,10 @@ void loop() {
   switch (state) {
     case LOADING:
       if (hopperTimer.check()) {
-        break;
+        state = MOVING_TO_WALL;
       }
+      drive_forward_motors();
+      break;
 
     case MOVING_TO_WALL:
       // if we're 12 rad 2 = 17ish in. away from opposite wall
@@ -178,8 +180,7 @@ void loop() {
         turnWallTimer.reset();
         turnTowardWall();
       } else { // still just moving forward
-        motor_l_forward();
-        motor_r_forward();
+        drive_forward_motors();
       }
       break;
     
@@ -187,14 +188,12 @@ void loop() {
       if (turnWallTimer.check()) {
         #ifndef TESTING_ROBOT
         state = MOVING_TO_SCORING;
-        motor_l_forward();
-        motor_r_forward();
+        drive_forward_motors();
         #endif
 
         #ifdef TESTING_ROBOT
         state = DONE;
-        motor_l_stop();
-        motor_r_stop();
+        stop_motors();
         #endif
 
       } else { // keep turning
