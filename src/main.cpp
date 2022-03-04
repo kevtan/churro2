@@ -38,11 +38,11 @@
 
 
 /*---------------Threshold Definitions--------------------------*/
-#define TURN_WALL_THRESHOLD 75
-#define TRAVEL_TO_LONG_WALL_THRESHOLD 3
+#define TURN_WALL_THRESHOLD 43
+#define TRAVEL_TO_LONG_WALL_THRESHOLD 9
 #define SCORING_ZONE_THRESHOLD 2
-#define TURN_WALL_DURATION 465 // SET THIS LATER
-#define TURN_SCORING_DURATION 465 // SET THIS LATER
+#define TURN_WALL_DURATION 490 // SET THIS LATER
+#define TURN_SCORING_DURATION 490 // SET THIS LATER
 #define HOPPER_DURATION 10
 
 /*---------------General Constants --------------------------*/
@@ -329,7 +329,7 @@ void loop() {
       break;
   }
 
-  delay(500);
+  delay(150);
 
 }
 
@@ -411,8 +411,9 @@ int sonar_distance() {
     digitalWrite(TRIGGER, LOW);
     long duration = pulseIn(ECHO, HIGH);
 
-    //curr_dist = (duration) / 74 / 2;
+    curr_dist = (duration) / 74 / 2;
  //averaging code
+ /*
    if (sonar_index < MAX_INDEX) {
     sonarvalues[sonar_index] = (duration) / 74 / 2;
     sonar_index++;
@@ -427,7 +428,7 @@ int sonar_distance() {
       curr_dist = sum/MAX_INDEX;
       sonar_index  =  0;
    }
-   
+   */
 
     // cm = (duration) / 29 / 2;
     //if (SERIAL_ON) Serial.print(curr_dist);
