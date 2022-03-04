@@ -142,7 +142,7 @@ void setup() {
   curr_dist = INITIAL_WALL_DISTANCE;
   delay(INITIAL_DELAY);
   determine_team();
-  hopper_intake();
+  //hopper_intake();
   // *FOR BLUE TEAM ONLY*
   // doing initial turn inside loading zone to compensate for mechanical issues
   motor_l_forward();
@@ -319,7 +319,7 @@ void loop() {
     case DONE:
       motor_l_stop();
       motor_r_stop();
-      hopper_outtake();
+      //hopper_outtake();
       break;
   
     // case MOVING_TOWARD_LONG_WALL:
