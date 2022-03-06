@@ -38,11 +38,12 @@
 
 
 /*---------------Threshold Definitions--------------------------*/
-#define TURN_WALL_THRESHOLD 25
-#define TRAVEL_TO_LONG_WALL_THRESHOLD 3
-#define SCORING_ZONE_THRESHOLD 1
-#define TURN_WALL_DURATION 515//veer right a lil //515 (lil too short) //490 (orig)
-#define TURN_SCORING_DURATION 540 // 480//490
+#define TURN_WALL_THRESHOLD 30
+// #define TURN_WALL_THRESHOLD 11
+#define TRAVEL_TO_LONG_WALL_THRESHOLD 17
+#define SCORING_ZONE_THRESHOLD 2
+#define TURN_WALL_DURATION 525 //veer right a lil //515 (lil too short) //490 (orig)
+#define TURN_SCORING_DURATION 450 // 480//490
 #define HOPPER_DURATION 10
 
 /*---------------General Constants --------------------------*/
@@ -64,8 +65,10 @@
 #define MOTOR_HOPPER_ENABLE 8
 #define MOTOR_HOPPER_DIR_1 9
 #define MOTOR_HOPPER_DIR_2 10
-#define TRIGGER 18
-#define ECHO 17
+#define TRIGGER_1 18
+#define ECHO_1 17
+#define TRIGGER_2 22
+#define ECHO_2 21
 #define TEAM_PIN 14
 #define MAX_INDEX 1
 
@@ -87,8 +90,12 @@ Team team;
 bool passed_junction_1, passed_junction_2;
 
 volatile States_t state;
-volatile int curr_dist;
+volatile int curr_dist_fwd;
+volatile int curr_dist_bwd;
 
+#define MOVING_AVERAGE_WIDTH 10
+int recent_sonar_distances_index = 0;
+int recent_sonar_distances[MOVING_AVERAGE_WIDTH];
 
 static Metro hopperTimer = Metro(HOPPER_DURATION); // delay between computing sonar_distance
 static Metro turnWallTimer = Metro(TURN_WALL_DURATION);  // 90 degree turn one-way
@@ -111,7 +118,7 @@ void firstTurn();
 void secondTurn();
 
 void initialize_sonar_pins();
-int sonar_distance();
+int sonar_distance(int TRIG, int EC);
 
 void initialize_hopper_pins();
 void hopper_intake();
@@ -133,24 +140,31 @@ void setup() {
   Serial.begin(9600);
   #endif
 
+  for (int i = 0; i < MOVING_AVERAGE_WIDTH; i++)
+    recent_sonar_distances[i] = INITIAL_WALL_DISTANCE;
+
   initialize_motor_pins();
-  pinMode(TRIGGER, OUTPUT);
-  pinMode(ECHO, INPUT);
+  pinMode(TRIGGER_1, OUTPUT);
+  pinMode(ECHO_1, INPUT);
+  pinMode(TRIGGER_2, OUTPUT);
+  pinMode(ECHO_2, INPUT);
 
   Serial.println("STARTING");
 
-  curr_dist = INITIAL_WALL_DISTANCE;
+  curr_dist_fwd = INITIAL_WALL_DISTANCE;
   delay(INITIAL_DELAY);
   determine_team();
   //hopper_intake();
+
   // *FOR BLUE TEAM ONLY*
-  // doing initial turn inside loading zone to compensate for mechanical issues
+  // doing initial veer inside loading zone to compensate for mechanical issues
+  /*
   motor_l_forward();
   motor_r_backward();
   delay(125);
   motor_l_stop();
   motor_r_stop();
-
+  */
 
   // distanceTimer.reset();
   state = LOADING;
@@ -218,16 +232,34 @@ void motor_l_backward()
   digitalWrite(MOTOR_L_DIR_2, LOW);
 }
 
+int get_sonar_distance() {
+  // Get the instantaneous distance.
+  int distance = sonar_distance(TRIGGER_1, ECHO_1);
+  Serial.println(distance);
+  // Write it to the appropriate location.
+  recent_sonar_distances[recent_sonar_distances_index] = distance;
+  recent_sonar_distances_index = (++recent_sonar_distances_index) % MOVING_AVERAGE_WIDTH;
+  int sum = 0;
+  for (int i = 0; i < MOVING_AVERAGE_WIDTH; i++)
+    sum += recent_sonar_distances[i];
+  return sum / MOVING_AVERAGE_WIDTH;
+}
+
 void loop() {
   // put your main code here, to run repeatedly:
-  sonar_distance();
+  curr_dist_fwd = get_sonar_distance();
+  // Serial.println(curr_dist_fwd);
+  delay(100);
+  curr_dist_bwd = sonar_distance(TRIGGER_2, ECHO_2);
 
-  #ifdef SERIAL_ON
-  Serial.print("State: ");
-  Serial.print(print_state(state));
-  Serial.print(", Distance : ");
-  Serial.println(curr_dist);
-  #endif
+  // #ifdef SERIAL_ON
+  // Serial.print("State: ");
+  // Serial.print(print_state(state));
+  // Serial.print(", Forward Distance : ");
+  // Serial.println(curr_dist_fwd);
+  // Serial.print(", Backward Distance : ");
+  // Serial.println(curr_dist_bwd);
+  // #endif
 
   switch (state) {
     case LOADING:
@@ -237,7 +269,7 @@ void loop() {
     
     case MOVING_TOWARD_WALL:
       // if we're 12 rad 2 = 17ish in. away from opposite wall
-      if (curr_dist <= TURN_WALL_THRESHOLD) { // time to do an in-place turn
+      if (curr_dist_fwd <= TURN_WALL_THRESHOLD) { //curr_dist_bwd >= 96 - TURN_WALL_THRESHOLD) { // time to do an in-place turn
         state = TURN_WALL;
         turnWallTimer.reset();
         firstTurn();
@@ -267,7 +299,7 @@ void loop() {
       break;
     
     case MOVING_TOWARD_LONG_WALL:
-      if (curr_dist <= TRAVEL_TO_LONG_WALL_THRESHOLD) { // time to do an in-place turn
+      if (curr_dist_fwd <= TRAVEL_TO_LONG_WALL_THRESHOLD) { // time to do an in-place turn
         state = TURN_SCORING;
         turnScoringTimer.reset();
         secondTurn();
@@ -299,7 +331,7 @@ void loop() {
 
       motor_l_forward();
       motor_r_forward();
-      delay(1500);
+      delay(2500);
       motor_l_stop();
       motor_r_stop();
       state = DONE;
@@ -353,7 +385,7 @@ void loop() {
       break;
   }
 
-  delay(100);
+  delay(10);
 }
 
 void firstTurn() {
@@ -417,21 +449,23 @@ String print_state(int state)
 
 void initialize_sonar_pins() 
 {
-  pinMode(TRIGGER, OUTPUT);
-  pinMode(ECHO, INPUT);
+  pinMode(TRIGGER_1, OUTPUT);
+  pinMode(ECHO_1, INPUT);
+  pinMode(TRIGGER_2, OUTPUT);
+  pinMode(ECHO_2, INPUT);
 }
 
 /* From https://www.tutorialspoint.com/arduino/arduino_ultrasonic_sensor.htm */
-int sonar_distance() {
+int sonar_distance(int TRIG, int EC) {
   // if (distanceTimer.check()) {
-    digitalWrite(TRIGGER, LOW);
+    digitalWrite(TRIG, LOW);
     delayMicroseconds(2);
-    digitalWrite(TRIGGER, HIGH);
+    digitalWrite(TRIG, HIGH);
     delayMicroseconds(10);
-    digitalWrite(TRIGGER, LOW);
-    long duration = pulseIn(ECHO, HIGH);
+    digitalWrite(TRIG, LOW);
+    long duration = pulseIn(EC, HIGH);
 
-    curr_dist = (duration) / 74 / 2;
+    int dist = (duration) / 74 / 2;
  //averaging code
  /*
    if (sonar_index < MAX_INDEX) {
@@ -457,7 +491,7 @@ int sonar_distance() {
     // if (SERIAL_ON) Serial.print("cm");
     //if (SERIAL_ON) Serial.println();
     // distanceTimer.reset();
-    return curr_dist;
+    return dist;
 }
 
 
